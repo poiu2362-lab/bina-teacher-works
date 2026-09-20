@@ -1,36 +1,53 @@
 const { issueSignedToken, presignUrl } = require('@vercel/blob');
 
+const FIREBASE_KEY =
+  process.env.FIREBASE_WEB_API_KEY ||
+  'AIzaSyDzoFcHp-fYuflYbXh08lfkOlEkUwNqkuo';
+
+const SABAH_UID = 'AwY1Oo0iDqO5O2N3YSZYNlDdjk12';
+
 async function verify(req) {
-  const h = req.headers.authorization || '';
-  const idToken = h.startsWith('Bearer ') ? h.slice(7) : '';
+  const header = req.headers.authorization || '';
 
-  if (!idToken) throw new Error('Unauthorized');
+  const idToken = header.startsWith('Bearer ')
+    ? header.slice(7)
+    : '';
 
-  const key = process.env.FIREBASE_WEB_API_KEY;
-  if (!key) throw new Error('Firebase key missing');
+  if (!idToken) {
+    throw new Error('Unauthorized');
+  }
 
-  const r = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${key}`,
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_KEY}`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({ idToken })
     }
   );
 
-  const j = await r.json();
-  const uid = j?.users?.[0]?.localId;
+  const data = await response.json();
 
-  if (!r.ok || uid !== 'AwY1Oo0iDqO5O2N3YSZYNlDdjk12') {
+  if (
+    !response.ok ||
+    data?.users?.[0]?.localId !== SABAH_UID
+  ) {
     throw new Error('Forbidden');
   }
 }
 
 module.exports = async function (req, res) {
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader(
+    'Content-Type',
+    'application/json; charset=utf-8'
+  );
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({
+      error: 'Method not allowed'
+    });
   }
 
   try {
@@ -41,39 +58,60 @@ module.exports = async function (req, res) {
         ? JSON.parse(req.body || '{}')
         : (req.body || {});
 
-    const pathname = String(body.pathname || '');
+    const pathname = String(
+      body.pathname || ''
+    );
 
-    if (!pathname.startsWith('teacher-works/')) {
+    if (
+      !pathname ||
+      !pathname.startsWith('teacher-works/')
+    ) {
       throw new Error('Invalid pathname');
     }
 
-    const signedToken = await issueSignedToken({
+    const tokenOptions = {
       pathname,
       operations: ['get'],
-      validUntil: Date.now() + 15 * 60 * 1000,
-      token: process.env.BLOB_READ_WRITE_TOKEN
-    });
+      validUntil:
+        Date.now() + 15 * 60 * 1000
+    };
 
-    const out = await presignUrl(signedToken, {
-      operation: 'get',
-      pathname,
-      access: 'private',
-      validUntil: Date.now() + 10 * 60 * 1000,
-      useCache: true
-    });
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      tokenOptions.token =
+        process.env.BLOB_READ_WRITE_TOKEN;
+    }
+
+    const signedToken =
+      await issueSignedToken(tokenOptions);
+
+    const result = await presignUrl(
+      signedToken,
+      {
+        operation: 'get',
+        pathname,
+        access: 'private',
+        validUntil:
+          Date.now() + 10 * 60 * 1000,
+        useCache: true
+      }
+    );
 
     return res.status(200).json({
       ok: true,
-      presignedUrl: out.presignedUrl
+      presignedUrl: result.presignedUrl
     });
 
-  } catch (e) {
-    console.error(e);
+  } catch (error) {
+    console.error('file:', error);
 
-    return res
-      .status(e.message === 'Forbidden' ? 403 : 400)
-      .json({
-        error: e.message || 'Open failed'
-      });
+    return res.status(
+      error.message === 'Forbidden'
+        ? 403
+        : 400
+    ).json({
+      error:
+        error.message ||
+        'تعذر فتح الملف'
+    });
   }
 };

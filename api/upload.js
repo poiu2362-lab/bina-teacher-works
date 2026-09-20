@@ -1,10 +1,4 @@
-const { put } = require('@vercel/blob');
-
-module.exports.config = {
-  api: {
-    bodyParser: false
-  }
-};
+const { issueSignedToken, presignUrl } = require('@vercel/blob');
 
 const FIREBASE_KEY =
   process.env.FIREBASE_WEB_API_KEY ||
@@ -12,69 +6,31 @@ const FIREBASE_KEY =
 
 const SABAH_UID = 'AwY1Oo0iDqO5O2N3YSZYNlDdjk12';
 
-function readBody(req, max) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let total = 0;
-    let done = false;
-
-    req.on('data', chunk => {
-      if (done) return;
-
-      total += chunk.length;
-
-      if (total > max) {
-        done = true;
-        reject(new Error('حجم المرفق أكبر من الحد المسموح'));
-        return;
-      }
-
-      chunks.push(chunk);
-    });
-
-    req.on('end', () => {
-      if (!done) {
-        resolve(Buffer.concat(chunks));
-      }
-    });
-
-    req.on('error', reject);
-  });
-}
-
 async function verify(req) {
   const header = req.headers.authorization || '';
-
   const idToken = header.startsWith('Bearer ')
     ? header.slice(7)
     : '';
 
-  if (!idToken) {
-    throw new Error('Unauthorized');
-  }
+  if (!idToken) throw new Error('Unauthorized');
 
   const response = await fetch(
     `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_KEY}`,
     {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        idToken
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken })
     }
   );
 
   const data = await response.json();
 
-  const uid = data?.users?.[0]?.localId;
-
-  if (!response.ok || uid !== SABAH_UID) {
+  if (
+    !response.ok ||
+    data?.users?.[0]?.localId !== SABAH_UID
+  ) {
     throw new Error('Forbidden');
   }
-
-  return uid;
 }
 
 module.exports = async function (req, res) {
@@ -92,13 +48,32 @@ module.exports = async function (req, res) {
   try {
     await verify(req);
 
-    let originalName = 'document';
+    const body =
+      typeof req.body === 'string'
+        ? JSON.parse(req.body || '{}')
+        : (req.body || {});
 
-    try {
-      originalName = decodeURIComponent(
-        String(req.headers['x-file-name'] || 'document')
+    const originalName =
+      String(body.fileName || 'document');
+
+    const contentType =
+      String(
+        body.contentType ||
+        'application/octet-stream'
       );
-    } catch (_) {}
+
+    const fileSize =
+      Number(body.fileSize || 0);
+
+    if (fileSize <= 0) {
+      throw new Error('حجم الملف غير صالح');
+    }
+
+    if (fileSize > 20 * 1024 * 1024) {
+      throw new Error(
+        'الحد الأعلى للمرفق 20 ميجابايت'
+      );
+    }
 
     let extension = '';
 
@@ -112,53 +87,62 @@ module.exports = async function (req, res) {
 
     const pathname =
       `teacher-works/${new Date().getFullYear()}/` +
-      `document-${Date.now()}` +
+      `document-${Date.now()}-` +
+      `${Math.random().toString(36).slice(2, 9)}` +
       (extension ? `.${extension}` : '');
 
-    const body = await readBody(
-      req,
-      20 * 1024 * 1024
-    );
+    const validUntil =
+      Date.now() + 15 * 60 * 1000;
 
-    if (!body.length) {
-      throw new Error('المرفق فارغ');
-    }
-
-    const options = {
-      access: 'private',
-      addRandomSuffix: true,
-      contentType:
-        req.headers['content-type'] ||
-        'application/octet-stream'
+    const tokenOptions = {
+      pathname,
+      operations: ['put'],
+      validUntil
     };
 
     if (process.env.BLOB_READ_WRITE_TOKEN) {
-      options.token =
+      tokenOptions.token =
         process.env.BLOB_READ_WRITE_TOKEN;
     }
 
-    const blob = await put(
+    const signedToken =
+      await issueSignedToken(tokenOptions);
+
+    const presignOptions = {
       pathname,
-      body,
-      options
+      operation: 'put',
+      validUntil,
+      access: 'private',
+      contentType
+    };
+
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      presignOptions.token =
+        process.env.BLOB_READ_WRITE_TOKEN;
+    }
+
+    const result = await presignUrl(
+      signedToken,
+      presignOptions
     );
 
     return res.status(200).json({
       ok: true,
-      pathname: blob.pathname,
-      url: blob.url || '',
-      fileName: originalName
+      pathname,
+      uploadUrl: result.presignedUrl,
+      fileName: originalName,
+      contentType
     });
 
   } catch (error) {
-    console.error('upload:', error);
+    console.error('upload-sign:', error);
 
     return res.status(
       error.message === 'Forbidden' ? 403 : 400
     ).json({
       error:
         error.message ||
-        'تعذر رفع المرفق'
+        'تعذر تجهيز رفع المرفق'
     });
   }
 };

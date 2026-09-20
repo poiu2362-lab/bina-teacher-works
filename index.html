@@ -1,5 +1,157 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
-<head><meta charset="utf-8"><title>أعمال المعلمات</title></head>
-<body><h1>نظام أعمال معلمات طفل المستقبل</h1></body>
-</html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>أعمال معلمات طفل المستقبل</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;background:#f4f7f6;color:#18332d}
+.wrap{max-width:1100px;margin:auto;padding:18px}.card{background:#fff;border:1px solid #dfe8e5;border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 5px 18px #0000000b}
+h1,h2{margin:0 0 12px;color:#135f50}.muted{color:#667773;font-size:13px}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+label{display:block;font-weight:700;margin-bottom:6px}input,select,textarea{width:100%;padding:11px;border:1px solid #cbd8d4;border-radius:9px;font:inherit}
+.full{grid-column:1/-1}.btn{border:0;border-radius:9px;padding:11px 16px;background:#176b5b;color:white;font-weight:700;cursor:pointer}.btn.alt{background:#eef4f2;color:#174c42}.btn.danger{background:#a83b3b}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.hide{display:none!important}.msg{margin-top:10px;font-size:14px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px}
+table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border-bottom:1px solid #e5ecea;padding:10px;text-align:right;font-size:14px}th{background:#f7faf9}
+.tag{background:#eef4f2;border-radius:999px;padding:4px 9px}.empty{text-align:center;color:#778}.login{max-width:480px;margin:8vh auto}
+@media(max-width:700px){.grid{grid-template-columns:1fr}.full{grid-column:auto}.wrap{padding:10px}table{display:block;overflow:auto}}
+@media print{body{background:#fff}.no-print,.login{display:none!important}.wrap{max-width:none;padding:0}.card{box-shadow:none;border:0}.print-title{display:block!important}table{font-size:12px}th,td{padding:7px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="loginBox" class="card login">
+    <h1>أعمال معلمات طفل المستقبل</h1>
+    <p class="muted">جمعية بناء المستقبل التعليمية</p>
+    <div style="margin-top:18px"><label>البريد الإلكتروني</label><input id="email" type="email" autocomplete="username"></div>
+    <div style="margin-top:12px"><label>كلمة المرور</label><input id="password" type="password" autocomplete="current-password"></div>
+    <button class="btn" style="width:100%;margin-top:16px" onclick="login()">دخول</button>
+    <div id="loginMsg" class="msg"></div>
+  </div>
+
+  <div id="app" class="hide">
+    <div class="card top no-print">
+      <div><h1>أعمال معلمات طفل المستقبل</h1><div class="muted" id="who"></div></div>
+      <button class="btn alt" onclick="logout()">تسجيل الخروج</button>
+    </div>
+
+    <div class="card no-print">
+      <h2>رفع عمل معلمة</h2>
+      <div class="grid">
+        <div><label>المعلمة</label><select id="teacher"></select></div>
+        <div><label>تاريخ العمل</label><input id="workDate" type="date"></div>
+        <div><label>نوع العمل</label><select id="workType"><option>خطة</option><option>تحضير</option><option>نشاط</option><option>تقرير</option><option>تقييم</option><option>صور توثيقية</option><option>أخرى</option></select></div>
+        <div><label>حالة المراجعة</label><select id="status"><option>جديد</option><option>تمت المراجعة</option><option>يحتاج تعديل</option><option>معتمد</option></select></div>
+        <div class="full"><label>عنوان العمل</label><input id="title"></div>
+        <div class="full"><label>وصف مختصر</label><textarea id="description" rows="2"></textarea></div>
+        <div class="full"><label>ملاحظات</label><textarea id="notes" rows="2"></textarea></div>
+        <div class="full"><label>المرفق PDF / Word / صورة — حد أقصى 20MB</label><input id="file" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"></div>
+      </div>
+      <div class="actions"><button id="saveBtn" class="btn" onclick="saveWork()">حفظ ورفع</button></div>
+      <div id="uploadMsg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <div class="top no-print">
+        <h2>الأعمال المسجلة</h2>
+        <div class="actions" style="margin:0"><button class="btn alt" onclick="loadWorks()">تحديث</button><button class="btn alt" onclick="window.print()">طباعة</button></div>
+      </div>
+      <div class="print-title hide"><h2>تقرير أعمال معلمات برنامج طفل المستقبل</h2><p>جمعية بناء المستقبل التعليمية</p></div>
+      <table>
+        <thead><tr><th>المعلمة</th><th>التاريخ</th><th>النوع</th><th>العنوان</th><th>الحالة</th><th class="no-print">المرفق</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="6" class="empty">جارٍ التحميل…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script>
+const firebaseConfig={
+ apiKey:"AIzaSyDzoFcHp-fYuflYbXh08lfkOlEkUwNqkuo",
+ authDomain:"bina-future-beneficiarie-18c07.firebaseapp.com",
+ projectId:"bina-future-beneficiarie-18c07",
+ storageBucket:"bina-future-beneficiarie-18c07.firebasestorage.app",
+ messagingSenderId:"790723424245",
+ appId:"1:790723424245:web:40afcf02ae5040ae047abc"
+};
+firebase.initializeApp(firebaseConfig);
+const auth=firebase.auth(), db=firebase.firestore();
+const PROGRAM="طفل المستقبل";
+const SABAH_UID="AwY1Oo0iDqO5O2N3YSZYNlDdjk12";
+let teachers=[], works=[];
+
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+
+async function login(){
+ $("loginMsg").textContent="جارٍ الدخول…";
+ try{
+   const c=await auth.signInWithEmailAndPassword($("email").value.trim(),$("password").value);
+   if(c.user.uid!==SABAH_UID){await auth.signOut();throw new Error("هذا الرابط مخصص لحساب صباح فقط");}
+ }catch(e){$("loginMsg").textContent="تعذر الدخول: "+e.message}
+}
+async function logout(){await auth.signOut()}
+auth.onAuthStateChanged(async u=>{
+ if(!u){$("loginBox").classList.remove("hide");$("app").classList.add("hide");return}
+ if(u.uid!==SABAH_UID){await auth.signOut();return}
+ $("loginBox").classList.add("hide");$("app").classList.remove("hide");$("who").textContent="صباح يحيى آل صبحان — برنامج طفل المستقبل";
+ $("workDate").value=new Date().toISOString().slice(0,10);
+ await loadTeachers();await loadWorks();
+});
+async function loadTeachers(){
+ const q=await db.collection("teachers").get();
+ teachers=q.docs.map(d=>({id:d.id,...d.data()})).filter(x=>String(x.program||"").trim()===PROGRAM);
+ $("teacher").innerHTML='<option value="">اختر المعلمة</option>'+teachers.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join("");
+}
+async function directUpload(file){
+ if(file.size>20*1024*1024)throw new Error("حجم المرفق أكبر من 20 ميجابايت");
+ const token=await auth.currentUser.getIdToken(true);
+ const res=await fetch("/api/upload",{method:"POST",headers:{
+   "Authorization":"Bearer "+token,
+   "Content-Type":file.type||"application/octet-stream",
+   "X-File-Name":encodeURIComponent(file.name||"document")
+ },body:file});
+ const j=await res.json().catch(()=>({}));
+ if(!res.ok)throw new Error(j.error||"تعذر رفع المرفق");
+ return {pathname:j.pathname,fileName:file.name,fileType:file.type||"",fileSize:file.size};
+}
+async function saveWork(){
+ const btn=$("saveBtn"),msg=$("uploadMsg");btn.disabled=true;msg.textContent="جارٍ الحفظ…";
+ try{
+   const tid=$("teacher").value,t=teachers.find(x=>x.id===tid);
+   if(!t)throw new Error("اختر المعلمة");
+   if(!$("title").value.trim())throw new Error("اكتب عنوان العمل");
+   const file=$("file").files[0];let attachment={};
+   if(file){msg.textContent="جارٍ رفع المرفق…";attachment=await directUpload(file)}
+   const rec={program:PROGRAM,teacherId:tid,teacherName:t.name,workDate:$("workDate").value,
+     workType:$("workType").value,status:$("status").value,title:$("title").value.trim(),
+     description:$("description").value.trim(),notes:$("notes").value.trim(),...attachment,
+     uploadedBy:auth.currentUser.uid,uploadedByName:"صباح يحيى آل صبحان",
+     createdAt:firebase.firestore.FieldValue.serverTimestamp(),updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
+   await db.collection("teacher_works").add(rec);
+   $("title").value="";$("description").value="";$("notes").value="";$("file").value="";
+   msg.textContent="تم الحفظ والرفع بنجاح ✓";await loadWorks();
+ }catch(e){console.error(e);msg.textContent="تعذر الحفظ: "+e.message}finally{btn.disabled=false}
+}
+async function loadWorks(){
+ const q=await db.collection("teacher_works").where("program","==",PROGRAM).get();
+ works=q.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>String(b.workDate||"").localeCompare(String(a.workDate||"")));
+ $("rows").innerHTML=works.length?works.map(w=>`<tr>
+ <td>${esc(w.teacherName)}</td><td>${esc(w.workDate)}</td><td>${esc(w.workType)}</td>
+ <td>${esc(w.title)}</td><td><span class="tag">${esc(w.status)}</span></td>
+ <td class="no-print">${w.pathname?`<button class="btn alt" onclick="openFile('${w.id}')">فتح</button>`:"—"}</td></tr>`).join("")
+ :'<tr><td colspan="6" class="empty">لا توجد أعمال مسجلة</td></tr>';
+}
+async function openFile(id){
+ try{
+   const w=works.find(x=>x.id===id);if(!w||!w.pathname)throw new Error("لا يوجد مرفق");
+   const token=await auth.currentUser.getIdToken();
+   const r=await fetch("/api/file",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},body:JSON.stringify({pathname:w.pathname})});
+   const j=await r.json();if(!r.ok)throw new Error(j.error||"تعذر فتح الملف");
+   window.open(j.presignedUrl,"_blank","noopener");
+ }catch(e){alert(e.message)}
+}
+</script>
+</body></html>

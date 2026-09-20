@@ -1,52 +1,76 @@
 const { put } = require('@vercel/blob');
 
-module.exports.config = { api: { bodyParser: false } };
+module.exports.config = {
+  api: {
+    bodyParser: false
+  }
+};
+
+const FIREBASE_KEY =
+  process.env.FIREBASE_WEB_API_KEY ||
+  'AIzaSyDzoFcHp-fYuflYbXh08lfkOlEkUwNqkuo';
+
+const SABAH_UID = 'AwY1Oo0iDqO5O2N3YSZYNlDdjk12';
 
 function readBody(req, max) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let total = 0;
+    let done = false;
 
-    req.on('data', c => {
-      total += c.length;
+    req.on('data', chunk => {
+      if (done) return;
+
+      total += chunk.length;
+
       if (total > max) {
-        reject(new Error('حجم المرفق كبير'));
-        req.destroy();
+        done = true;
+        reject(new Error('حجم المرفق أكبر من الحد المسموح'));
         return;
       }
-      chunks.push(c);
+
+      chunks.push(chunk);
     });
 
-    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('end', () => {
+      if (!done) {
+        resolve(Buffer.concat(chunks));
+      }
+    });
+
     req.on('error', reject);
   });
 }
 
 async function verify(req) {
-  const h = req.headers.authorization || '';
-  const idToken = h.startsWith('Bearer ') ? h.slice(7) : '';
+  const header = req.headers.authorization || '';
 
-  if (!idToken) throw new Error('Unauthorized');
+  const idToken = header.startsWith('Bearer ')
+    ? header.slice(7)
+    : '';
 
-  const key = process.env.FIREBASE_WEB_API_KEY;
-  if (!key) throw new Error('Firebase key missing');
+  if (!idToken) {
+    throw new Error('Unauthorized');
+  }
 
-  const r = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${key}`,
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_KEY}`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idToken })
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        idToken
+      })
     }
   );
 
-  const j = await r.json();
-  const uid = j?.users?.[0]?.localId;
+  const data = await response.json();
 
-  if (
-    !r.ok ||
-    uid !== 'AwY1Oo0iDqO5O2N3YSZYNlDdjk12'
-  ) {
+  const uid = data?.users?.[0]?.localId;
+
+  if (!response.ok || uid !== SABAH_UID) {
     throw new Error('Forbidden');
   }
 
@@ -54,27 +78,32 @@ async function verify(req) {
 }
 
 module.exports = async function (req, res) {
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader(
+    'Content-Type',
+    'application/json; charset=utf-8'
+  );
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({
+      error: 'Method not allowed'
+    });
   }
 
   try {
     await verify(req);
 
-    let name = 'document';
+    let originalName = 'document';
 
     try {
-      name = decodeURIComponent(
+      originalName = decodeURIComponent(
         String(req.headers['x-file-name'] || 'document')
       );
-    } catch {}
+    } catch (_) {}
 
-    let ext = '';
+    let extension = '';
 
-    if (name.includes('.')) {
-      ext = name
+    if (originalName.includes('.')) {
+      extension = originalName
         .split('.')
         .pop()
         .toLowerCase()
@@ -83,35 +112,53 @@ module.exports = async function (req, res) {
 
     const pathname =
       `teacher-works/${new Date().getFullYear()}/` +
-      `document-${Date.now()}${ext ? '.' + ext : ''}`;
+      `document-${Date.now()}` +
+      (extension ? `.${extension}` : '');
 
-    const body = await readBody(req, 20 * 1024 * 1024);
+    const body = await readBody(
+      req,
+      20 * 1024 * 1024
+    );
 
     if (!body.length) {
       throw new Error('المرفق فارغ');
     }
 
-    const blob = await put(pathname, body, {
+    const options = {
       access: 'private',
       addRandomSuffix: true,
       contentType:
         req.headers['content-type'] ||
-        'application/octet-stream',
-      token: process.env.BLOB_READ_WRITE_TOKEN
-    });
+        'application/octet-stream'
+    };
+
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      options.token =
+        process.env.BLOB_READ_WRITE_TOKEN;
+    }
+
+    const blob = await put(
+      pathname,
+      body,
+      options
+    );
 
     return res.status(200).json({
       ok: true,
-      pathname: blob.pathname
+      pathname: blob.pathname,
+      url: blob.url || '',
+      fileName: originalName
     });
 
-  } catch (e) {
-    console.error(e);
+  } catch (error) {
+    console.error('upload:', error);
 
-    return res
-      .status(e.message === 'Forbidden' ? 403 : 400)
-      .json({
-        error: e.message || 'Upload failed'
-      });
+    return res.status(
+      error.message === 'Forbidden' ? 403 : 400
+    ).json({
+      error:
+        error.message ||
+        'تعذر رفع المرفق'
+    });
   }
 };

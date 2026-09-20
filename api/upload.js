@@ -8,17 +8,22 @@ const SABAH_UID = 'AwY1Oo0iDqO5O2N3YSZYNlDdjk12';
 
 async function verify(req) {
   const header = req.headers.authorization || '';
+
   const idToken = header.startsWith('Bearer ')
     ? header.slice(7)
     : '';
 
-  if (!idToken) throw new Error('Unauthorized');
+  if (!idToken) {
+    throw new Error('Unauthorized');
+  }
 
   const response = await fetch(
     `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_KEY}`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({ idToken })
     }
   );
@@ -62,14 +67,13 @@ module.exports = async function (req, res) {
         'application/octet-stream'
       );
 
-    const fileSize =
-      Number(body.fileSize || 0);
+    const fileSize = Number(body.fileSize || 0);
 
-    if (fileSize <= 0) {
-      throw new Error('حجم الملف غير صالح');
-    }
-
-    if (fileSize > 20 * 1024 * 1024) {
+    // نتحقق من الحد الأعلى فقط إذا وصل الحجم فعليًا
+    if (
+      fileSize > 0 &&
+      fileSize > 20 * 1024 * 1024
+    ) {
       throw new Error(
         'الحد الأعلى للمرفق 20 ميجابايت'
       );
